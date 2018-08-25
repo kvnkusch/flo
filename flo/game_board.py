@@ -8,6 +8,8 @@ class GameBoard(metaclass=ABCMeta):
         self.points = points
         self.pairs = pairs
 
+    # I spend SOOOO much time in this function...
+    # I feel like I could update this as I go...
     def get_adjacent_points(self, path, ignore=None):
         return [[p for p in self.adjacent_points(end_point)
                  if p in self.points and
@@ -36,12 +38,12 @@ class GameBoard(metaclass=ABCMeta):
                 for adj_pt in self.adjacent_points(pt)
                 if pt != end_point]
 
-    def adjacent_points(self, p):
-        return [p.with_added_delta(d) for d in self.adjacent_point_deltas]
+    def adjacent_points(self, point):
+        return [point.with_added_delta(d) for d in self.adjacent_point_deltas]
 
     @property
     @abstractmethod
-    def adjacent_point_deltas(self, p):
+    def adjacent_point_deltas(self):
         pass
 
     @abstractmethod
