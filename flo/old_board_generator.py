@@ -4,7 +4,7 @@ from game_state import GameState
 from game_plotter import plot_game
 from path import Path
 from pair import Pair
-from prob import Distribution, LazyDistribution
+from prob import Distribution
 
 import random
 
