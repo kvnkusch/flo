@@ -29,10 +29,10 @@ class Path():
     def continuation_points(self):
         if self.is_empty():
             return None, None
-        beg_delta = self.points[0].get_delta_from(self.points[1])
-        end_delta = self.points[-1].get_delta_from(self.points[-2])
-        return (self.points[0].with_added_delta(beg_delta),
-                self.points[-1].with_added_delta(end_delta))
+        beg_delta = self.points[0] - self.points[1]
+        end_delta = self.points[-1] - self.points[-2]
+        return (self.points[0] + beg_delta,
+                self.points[-1] + end_delta)
 
     def get_pair(self):
         return Pair(*self.end_points())
