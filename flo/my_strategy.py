@@ -10,6 +10,10 @@ import random
 
 class MyStrategy():
 
+    @staticmethod
+    def random_order(lst):
+        return random.sample(lst, len(lst))
+
     def get_max_pairs(self, game_state):
         return game_state.board.size
 
@@ -22,55 +26,115 @@ class MyStrategy():
         else:
             return 1
 
-    def can_extend_path(self, game_state):
+    def _get_extend_path_game_state(self, game_state):
         path_dists = []
-        for path in game_state.paths:
+        for path in self.random_order(game_state.paths):
             extend_path_dist = self._get_path_extended_path_dist(
                 path, game_state)
             if extend_path_dist.not_empty():
-                return True
-        return False
+                return extend_path_dist.choice()
+        return None
 
-    def can_add_path(self, game_state):
+    def _get_new_path_game_state(self, game_state):
         ignore = game_state.get_ignore_points()
-        for seed_point in game_state.board.get_open_points(ignore=ignore):
+        for seed_point in self.random_order(game_state.board.get_open_points(ignore)):
             add_path_dist = self._get_path_extended_path_dist(
                 Path([seed_point]), game_state)
             if add_path_dist.not_empty():
-                return True
-        return False
+                return add_path_dist.choice()
+        return None
 
     def get_extend_path_game_state(self, game_state):
         path_dists = []
-        for path in game_state.paths:
-            path_dists.append(self._get_path_extended_path_dist(
-                path, game_state))
-        return Distribution.uniform(path_dists).choice()
+        for path in self.random_order(game_state.paths):
+            extend_path_dist = self._get_path_extended_path_dist(
+                path, game_state)
+            if extend_path_dist.not_empty():
+                return extend_path_dist.choice()
+        return None
 
     def get_new_path_game_state(self, game_state):
-        seed_point_dists = []
         ignore = game_state.get_ignore_points()
-        for seed_point in game_state.board.get_open_points(ignore=ignore):
-            seed_point_dists.append(
-                self._get_path_extended_path_dist(Path([seed_point]),
-                                                  game_state))
-        return Distribution.uniform(seed_point_dists).choice()
+        for seed_point in self.random_order(game_state.board.get_open_points(ignore)):
+            add_path_dist = self._get_path_extended_path_dist(
+                Path([seed_point]), game_state)
+            if add_path_dist.not_empty():
+                return add_path_dist.choice()
+        return None
 
-    # TODO: What's going on here???
-    # It works but I forgot why
+    def _get_path_extended_path_dist(self, path, game_state):
+        adj_point_dists = []
+        ignore_pts = game_state.get_ignore_points()
+
+        beg_adj_pts, end_adj_pts = game_state.board.get_adjacent_points(
+            path, ignore_pts + path.points)
+
+        # Continuation points is a heuristic to get better puzzles
+        continuation_pts = path.continuation_points()
+        any_continuation_pts = any(pt in continuation_pts
+                                   for pt in beg_adj_pts + end_adj_pts)
+
+        for adj_point in beg_adj_pts + end_adj_pts:
+            # # Old method that only had increased probability
+            # relative_prob = 1 if adj_point not in continuation_pts else\
+            #     len(beg_adj_pts) if adj_point in beg_adj_pts else\
+            #     len(end_adj_pts)
+
+            # New method that uses continuation point always
+            # Faster becuase there's fewer unsolvable puzzles
+            if any_continuation_pts:
+                relative_prob = 1 if adj_point in continuation_pts else 0
+            else:
+                relative_prob = 1
+
+            next_game_state_func = self._get_extended_path_game_state_funcs(
+                 adj_point, adj_point in beg_adj_pts, path, game_state)
+            adj_point_dists.append((relative_prob, next_game_state_func))
+
+        return Distribution(adj_point_dists)
+
+    def _get_extended_path_game_state_funcs(self,
+                                            adj_point,
+                                            adj_to_beg,
+                                            to_extend_path,
+                                            game_state):
+        # This is the latest way to avoid doing excess pre-computation but
+        # it is still beating around the bush.
+        def get_extended_path_game_state():
+            new_paths = [p for p in game_state.paths if p != to_extend_path]
+            new_paths += [Path([adj_point] + to_extend_path.points)
+                          if adj_to_beg else
+                          Path(to_extend_path.points + [adj_point])]
+
+            return GameState(
+                GridBoard(game_state.board.size,
+                          [pth.get_pair() for pth in new_paths]),
+                new_paths
+            )
+        return get_extended_path_game_state
+
     def get_unsolvable_info(self, game_state, max_pairs):
-        eligible_points = self._get_eligible_points(game_state)
+        eligible_points = None
         open_clusters = self._get_open_point_clusters(game_state)
 
-        isolated_clusters = [
-            cluster for cluster in open_clusters
-            if not cluster & eligible_points
-        ]
+        # isolated_clusters = [
+        #     cluster for cluster in open_clusters
+        #     if not cluster.intersection(eligible_points)
+        # ]
 
-        unreachable_clusters = [
-            cluster for cluster in isolated_clusters
-            if len(cluster) < 3 or len(game_state.paths) == max_pairs
-        ]
+        # unreachable_clusters = [
+        #     cluster for cluster in isolated_clusters
+        #     if len(cluster) < 3 or len(game_state.paths) == max_pairs
+        # ]
+
+        unreachable_clusters = []
+        at_capacity = len(game_state.paths) == max_pairs
+        for cluster in open_clusters:
+            if len(cluster) < 3 or at_capacity:
+                if eligible_points is None:
+                    eligible_points = self._get_eligible_points(game_state)
+                if not cluster.intersection(eligible_points):
+                    unreachable_clusters.append(cluster)
 
         return UnsolvableInfo(
             len(unreachable_clusters) > 0,
@@ -86,7 +150,7 @@ class MyStrategy():
             pt
             for pth in game_state.paths
             for end_pt_adjacent_pts in game_state.board.get_adjacent_points(
-                pth, ignore=ignore_pts)
+                pth, ignore_pts)
             for pt in end_pt_adjacent_pts
         ])
 
@@ -95,7 +159,7 @@ class MyStrategy():
     def _get_open_point_clusters(game_state):
         ignore_pts = game_state.get_ignore_points()
         open_pt_clusters = []
-        open_pts = game_state.board.get_open_points(ignore=ignore_pts)
+        open_pts = game_state.board.get_open_points(ignore_pts)
         visited_pts = set()
 
         for pt in open_pts:
@@ -135,52 +199,3 @@ class MyStrategy():
                     break
 
         return game_state.without_paths(bad_paths)
-
-    def _get_path_extended_path_dist(self, path, game_state):
-        adj_point_dists = []
-        ignore_pts = game_state.get_ignore_points()
-
-        beg_adj_pts, end_adj_pts = game_state.board.get_adjacent_points(
-            path, ignore=ignore_pts + path.points)
-
-        # Continuation points is a heuristic to get better puzzles
-        continuation_pts = path.continuation_points()
-        any_continuation_pts = any(pt in continuation_pts
-                                   for pt in beg_adj_pts + end_adj_pts)
-
-        for adj_point in beg_adj_pts + end_adj_pts:
-            # # Old method that only had increased probability
-            # relative_prob = 1 if adj_point not in continuation_pts else\
-            #     len(beg_adj_pts) if adj_point in beg_adj_pts else\
-            #     len(end_adj_pts)
-
-            if any_continuation_pts:
-                relative_prob = 1 if adj_point in continuation_pts else 0
-            else:
-                relative_prob = 1
-
-            next_game_state_func = self._get_extended_path_game_state_funcs(
-                 adj_point, adj_point in beg_adj_pts, path, game_state)
-            adj_point_dists.append((relative_prob, next_game_state_func))
-
-        return Distribution(adj_point_dists)
-
-    def _get_extended_path_game_state_funcs(self,
-                                            adj_point,
-                                            adj_to_beg,
-                                            to_extend_path,
-                                            game_state):
-        # This is the latest way to avoid doing excess pre-computation but
-        # it is still beating around the bush.
-        def get_extended_path_game_state():
-            new_paths = [p for p in game_state.paths if p != to_extend_path]
-            new_paths += [Path([adj_point] + to_extend_path.points)
-                          if adj_to_beg else
-                          Path(to_extend_path.points + [adj_point])]
-
-            return GameState(
-                GridBoard(game_state.board.size,
-                          [pth.get_pair() for pth in new_paths]),
-                new_paths
-            )
-        return get_extended_path_game_state

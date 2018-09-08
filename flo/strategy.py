@@ -5,7 +5,7 @@ from collections import namedtuple
 UnsolvableInfo = namedtuple('UnsolvableInfo', ['is_unsolvable', 'data'])
 
 
-class Strategy():
+class Strategy(metaclass=ABCMeta):
 
     @abstractmethod
     def get_max_pairs(self, game_state):
@@ -20,27 +20,15 @@ class Strategy():
         """
 
     @abstractmethod
-    def can_extend_path(self, game_state):
-        """
-        Returns boolean
-        """
-
-    @abstractmethod
-    def can_add_path(self, game_state):
-        """
-        Returns boolean
-        """
-
-    @abstractmethod
     def get_extend_path_game_state(self, game_state):
         """
-        Returns Distribution<GameState>
+        Returns Optional<GameState>
         """
 
     @abstractmethod
     def get_new_path_game_state(self, game_state):
         """
-        Returns Distribution<GameState>
+        Returns Optional<GameState>
         """
 
     @abstractmethod

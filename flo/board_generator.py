@@ -22,27 +22,27 @@ class BoardGenerator():
 
             extend_path_prob = self.strategy.should_extend_path(game_state,
                                                                 max_pairs)
-            next_game_state_funcs = []
+            next_game_states = []
             probs = []
 
-            if self.strategy.can_extend_path(game_state):
-                next_game_state_funcs.append(self.strategy.get_extend_path_game_state)
+            extend_path_game_state = self.strategy.get_extend_path_game_state(game_state)
+            new_path_game_state = self.strategy.get_new_path_game_state(game_state)
+
+            if extend_path_game_state is not None:
+                next_game_states.append(extend_path_game_state)
                 probs.append(extend_path_prob)
-                # events.append((extend_path_prob, self.strategy.get_extend_path_dist(game_state)))
 
-            if self.strategy.can_add_path(game_state):
-                next_game_state_funcs.append(self.strategy.get_new_path_game_state)
+            if new_path_game_state is not None:
+                next_game_states.append(new_path_game_state)
                 probs.append(1 - extend_path_prob)
-                # events.append((1 - extend_path_prob, self.strategy.get_new_path_dist(game_state)))
 
-            if len(next_game_state_funcs) == 1:
+            if len(next_game_states) == 1:
                 probs[0] = 1
 
-            if not next_game_state_funcs:
+            if not next_game_states:
                 raise ValueError
 
-            next_game_state_func = random.choice(next_game_state_funcs, p=probs)
-            game_state = next_game_state_func(game_state)()
+            game_state = random.choice(next_game_states, p=probs)()
 
             unsolvable_info = self.strategy.get_unsolvable_info(game_state, max_pairs)
 
@@ -63,4 +63,4 @@ class BoardGenerator():
 bg = BoardGenerator(MyStrategy())
 
 if __name__ == '__main__':
-    bg.generate_board(14, plot=True, verbose=True)
+    bg.generate_board(12, plot=True, verbose=True)
