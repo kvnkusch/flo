@@ -1,6 +1,6 @@
 from strategy import (
-    Strategy, MaxPairsDecider, ShouldExtendDecider, UnsolvableDecider,
-    PreviousGameStateDecider, ExtendPathDecider, AddPathDecider,
+    Strategy, MaxPairsDecider, ShouldExtendDecider,
+    ExtendPathDecider, AddPathDecider, ResolveClustersDecider
 )
 from game_board import GridBoard
 from game_state import GameState
@@ -11,6 +11,7 @@ from pair import Pair
 import random
 
 
+# TODO: Judge [-2 ... 2]
 class MyMaxPairsDecider(MaxPairsDecider):
     def decide(self, game_state):
         return game_state.board.size
@@ -27,12 +28,12 @@ class MyShouldExtendDecider(ShouldExtendDecider):
             return 1
 
 
-def get_all_extended_path_dist(game_state):
-    path_dists = []
-    for path in game_state.paths:
-        path_dists.append(get_path_extended_path_dist(
-            path, game_state))
-    return Distribution.uniform(path_dists)
+# def get_all_extended_path_dist(game_state):
+#     path_dists = []
+#     for path in game_state.paths:
+#         path_dists.append(get_path_extended_path_dist(
+#             path, game_state))
+#     return Distribution.uniform(path_dists)
 
 
 def get_path_extended_path_dist(path, game_state):
@@ -83,114 +84,54 @@ def get_extended_path_game_state_funcs(adj_point, adj_to_beg, to_extend_path,
     return get_extended_path_game_state
 
 
-def get_all_new_path_dist(game_state):
-    seed_point_dists = []
-    ignore = game_state.get_ignore_points()
-    for seed_point in game_state.board.get_open_points(ignore=ignore):
-        seed_point_dists.append(
-            get_path_extended_path_dist(Path([seed_point]), game_state))
-    return Distribution.uniform(seed_point_dists)
-
-
-# def get_pair(path):
-#     return Pair(*path.end_points())
+# def get_all_new_path_dist(game_state):
+#     seed_point_dists = []
+#     ignore = game_state.get_ignore_points()
+#     for seed_point in game_state.board.get_open_points(ignore=ignore):
+#         seed_point_dists.append(
+#             get_path_extended_path_dist(Path([seed_point]), game_state))
+#     return Distribution.uniform(seed_point_dists)
 
 
 class MyExtendPathDecider(ExtendPathDecider):
     def decide(self, game_state):
-        return get_all_extended_path_dist(game_state)
+        path_dists = []
+        for path in game_state.paths:
+            path_dists.append(get_path_extended_path_dist(
+                path, game_state))
+        return Distribution.uniform(path_dists)
 
 
 class MyAddPathDecider(AddPathDecider):
     def decide(self, game_state):
-        return get_all_new_path_dist(game_state)
+        seed_point_dists = []
+        ignore = game_state.get_ignore_points()
+        for seed_point in game_state.board.get_open_points(ignore=ignore):
+            seed_point_dists.append(
+                get_path_extended_path_dist(Path([seed_point]), game_state))
+        return Distribution.uniform(seed_point_dists)
 
 
-class MyUnsolvableDecider(UnsolvableDecider):
-    # TODO: Could probably be a lot better
-    def decide(self, game_state, max_pairs):
-        from game_plotter import plot_game
-        if game_state.is_victory_state():
-            # return False
-            return 0
+class MyResolveClustersDecider(ResolveClustersDecider):
+    def decide(self, game_state, clusters):
+        bad_paths = []
+        for cluster in clusters:
+            for path in game_state.paths:
+                # TODO: There is some unnecessary computation here
+                # Could do a pre-loop over paths and hash the "path_adj_points"
+                # result
+                path_adj_points = set([
+                    point
+                    for path_pt in path.points
+                    for point in game_state.board.adjacent_points(path_pt)
+                ])
+                if cluster & path_adj_points:
+                    bad_paths.append(path)
+                    # This limits to removing one path per cluster, which seems
+                    # reasonable to me (instead of removing all of them)
+                    break
 
-        eligible_pts = self.get_eligible_points(game_state)
-
-        # Then, find open_pt_clusters
-        open_pt_clusters = self.get_open_point_clusters(game_state)
-
-        # Check for "bubbles" aka clusters of size one
-        #   (one or two eventually if I outlaw paths of length two)
-        # If a bubble has no intersection with eligible points, return True
-        for cluster in open_pt_clusters:
-            if len(cluster) < 3:
-                if not cluster & eligible_pts:
-                    # return True
-                    return 1
-
-        # Only check the other clusters if I can't add any more pairs
-        if len(game_state.board.pairs) < max_pairs:
-            # return False
-            return 0
-
-        # If every open_pt_cluster intersects with eligible_pts, return False
-        # Otherwise that cluster cannot be reached and the puzzle is unsolvable
-        # Thus return True
-        for cluster in open_pt_clusters:
-            if not cluster & eligible_pts:
-                # return True
-                return 2
-
-        # return False
-        return 0
-
-
-    @staticmethod
-    def get_open_point_clusters(game_state):
-        ignore_pts = game_state.get_ignore_points()
-        open_pt_clusters = []
-        open_pts = game_state.board.get_open_points(ignore=ignore_pts)
-        visited_pts = set()
-
-        for pt in open_pts:
-            if pt not in visited_pts:
-                current_cluster = set([pt])
-                queue = [pt]
-
-                while queue:
-                    current_pt = queue.pop()
-                    neighbors = game_state.board.adjacent_points(current_pt)
-                    for n in neighbors:
-                        if n in open_pts and n not in visited_pts:
-                            visited_pts.add(n)
-                            current_cluster.add(n)
-                            queue.append(n)
-
-                open_pt_clusters.append(current_cluster)
-
-        return open_pt_clusters
-
-
-    @staticmethod
-    def get_eligible_points(game_state):
-        ignore_pts = game_state.get_ignore_points()
-        return set([
-            pt
-            for pth in game_state.paths
-            for end_pt_adjacent_pts in game_state.board.get_adjacent_points(
-                pth, ignore=ignore_pts)
-            for pt in end_pt_adjacent_pts
-        ])
-
-
-class MyPreviousGameStateDecider(PreviousGameStateDecider):
-    def decide(self, previous_game_states):
-        """
-        Returns a tuple of previous_game_states and game_state,
-        derived from chopping up the passed in previous_game_states
-        """
-        i = random.randrange(len(previous_game_states))
-        return previous_game_states[:i], previous_game_states[i]
+        return game_state.without_paths(bad_paths)
 
 
 my_strategy1 = Strategy(
@@ -198,6 +139,5 @@ my_strategy1 = Strategy(
     MyShouldExtendDecider(),
     MyExtendPathDecider(),
     MyAddPathDecider(),
-    MyUnsolvableDecider(),
-    MyPreviousGameStateDecider(),
+    MyResolveClustersDecider(),
 )
